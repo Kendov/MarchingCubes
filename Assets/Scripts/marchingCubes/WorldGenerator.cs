@@ -31,8 +31,12 @@ public class WorldGenerator : MonoBehaviour
 
         if(!isInsideWorld(pos))
             return null;
-        print(pos);
-        return chunks[ConvetToChunkPosition(new Vector3Int((int)pos.x, 0, (int)pos.z))];
+
+        //Chunk resultChunk;
+        chunks.TryGetValue(ConvetToChunkPosition(new Vector3Int((int)pos.x, 0, (int)pos.z)), out var resultChunk);
+
+        return resultChunk;
+        //return chunks[ConvetToChunkPosition(new Vector3Int((int)pos.x, 0, (int)pos.z))];
         
     }
 
@@ -62,6 +66,11 @@ public class WorldGenerator : MonoBehaviour
             remainderZ == 0 ? pos.z : pos.z - remainderZ
         );
     }
+
+    public void PrintMessage(string message){
+        print(message);
+    }
+    
 }
 
 

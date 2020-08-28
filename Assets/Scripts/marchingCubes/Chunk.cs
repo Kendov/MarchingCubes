@@ -41,22 +41,51 @@ namespace MarchingCubes
             
             
             chunkObject.name = $"chunk({chunkPosition.x},{chunkPosition.y},{chunkPosition.z})";
-            terrainMap = new float[Tables.ChunkWidth + 1, Tables.ChunkHeight + 1, Tables.ChunkWidth + 1];
+            terrainMap = new float[Tables.ChunkWidth, Tables.ChunkHeight, Tables.ChunkWidth];
             
             
             PopulateChunkValues();
-            GetVertices();
+            //GetVertices();
+            GenerateWorld();
             generateMesh();
         }
 
+        void GenerateWorld(){
+            float [,,] tempChunkData = new float[Tables.ChunkWidth + 1, Tables.ChunkHeight + 1 , Tables.ChunkWidth + 1];
+
+            for(int x = 0; x <= Tables.ChunkWidth; x++)
+            for(int y = 0; y <= Tables.ChunkHeight; y++)
+            for(int z = 0; z <= Tables.ChunkWidth; z++)
+            {
+                tempChunkData[x, y, z] = MapGenerator.perlin3d(
+                    (float)x / Tables.ChunkWidth + (chunkPosition.x / Tables.ChunkWidth),
+                    (float)y / Tables.ChunkWidth + (chunkPosition.y),
+                    (float)z / Tables.ChunkWidth + (chunkPosition.z / Tables.ChunkWidth)
+                );
+            }
+            for(int x = 0; x < Tables.ChunkWidth; x++)
+            for(int y = 0; y < Tables.ChunkHeight; y++)
+            for(int z = 0; z < Tables.ChunkWidth; z++)
+            {
+                float[] cube = new float[8];
+                for(int i = 0; i < 8; i++)
+                {
+                    Vector3Int corner = new Vector3Int(x, y, z) + Tables.cubeTable[i];
+                    cube[i] = tempChunkData[corner.x, corner.y, corner.z];
+                    
+                }
+                marchingCalc(new Vector3(x, y, z), cube);
+            }
+            
+        }
 
 
         void PopulateChunkValues(){
-            for(int x = 0; x <= Tables.ChunkWidth; x++)
+            for(int x = 0; x < Tables.ChunkWidth; x++)
             {
-                for(int y = 0; y <= Tables.ChunkHeight; y++)
+                for(int y = 0; y < Tables.ChunkHeight; y++)
                 {
-                    for(int z = 0; z <= Tables.ChunkWidth; z++)
+                    for(int z = 0; z < Tables.ChunkWidth; z++)
                     {
                         terrainMap[x, y, z] = MapGenerator.perlin3d(
                             (float)x / Tables.ChunkWidth + (chunkPosition.x / Tables.ChunkWidth),
@@ -75,13 +104,44 @@ namespace MarchingCubes
                     for(int z = 0; z < Tables.ChunkWidth; z++)
                     {
                         float[] cube = new float[8];
+                        bool ignore = false; //if no outside value ignore this block
                         for(int i = 0; i < 8; i++)
                         {
                             Vector3Int corner = new Vector3Int(x, y, z) + Tables.cubeTable[i];
-                            cube[i] = terrainMap[corner.x, corner.y, corner.z];
+                            if (corner.x >= Tables.ChunkWidth  ||
+                                corner.y >= Tables.ChunkHeight ||
+                                corner.z >= Tables.ChunkWidth  )
+                            {
+                                // TODO: Make a better solution for this calculation
+                                //calculate the next chunk position
+                                //if value is out of chunk, subtract by 1
+                                var nextChunkPos = new Vector3Int(
+                                    chunkPosition.x + corner.x >= Tables.ChunkWidth? chunkPosition.x + corner.x : chunkPosition.x,
+                                    chunkPosition.y + corner.y >= Tables.ChunkHeight? chunkPosition.y + corner.y : chunkPosition.y,
+                                    chunkPosition.z + corner.z >= Tables.ChunkWidth? chunkPosition.z + corner.z : chunkPosition.z);
+                                
+                                var nextChunk = world.GetChunkFromVector3(nextChunkPos);
+                                if (nextChunk == null){
+                                    ignore = true;
+                                    break;
+                                }
+
+                                cube[i] = nextChunk.terrainMap[
+                                    corner.x >= Tables.ChunkWidth? 0 : corner.x,
+                                    corner.y >= Tables.ChunkHeight? 0 : corner.y,
+                                    corner.z >= Tables.ChunkWidth? 0 : corner.z
+                                ];
+
+                            }
+                            else
+                            {
+                                cube[i] = terrainMap[corner.x, corner.y, corner.z];
+                            }
                             
                         }
-                        marchingCalc(new Vector3(x, y, z), cube);
+
+                        if(!ignore)
+                            marchingCalc(new Vector3(x, y, z), cube);
                     }
                 }
             }
@@ -116,11 +176,20 @@ namespace MarchingCubes
             {
                 int indiceVertice = Tables.triTable[cubeIndex, i];
 
-                Vector3 vertice1 = position + Tables.cubeTable[Tables.edgeTable[indiceVertice, 0]];
-                Vector3 vertice2 = position + Tables.cubeTable[Tables.edgeTable[indiceVertice, 1]];
+                //No interpolation
+                //Vector3 vertice1 = position + Tables.cubeTable[Tables.edgeTable[indiceVertice, 0]];
+                //Vector3 vertice2 = position + Tables.cubeTable[Tables.edgeTable[indiceVertice, 1]];
                 
+                //Vector3 vertPosition = (vertice1 + vertice2) / 2f;
                 
-                Vector3 vertPosition = (vertice1 + vertice2) / 2f;
+                //with interpolation
+                Vector3 vertPosition = VertexInterp(
+                    isoSurface ,
+                    position + Tables.cubeTable[Tables.edgeTable[indiceVertice, 0]],
+                    position + Tables.cubeTable[Tables.edgeTable[indiceVertice, 1]],
+                    cube[Tables.edgeTable[indiceVertice, 0]],
+                    cube[Tables.edgeTable[indiceVertice, 1]] );
+                
                 int repeatedVertice = vertices.IndexOf(vertPosition);
                 if(repeatedVertice < 0){
                     vertices.Add(vertPosition);
@@ -175,14 +244,21 @@ namespace MarchingCubes
             
         }
 
+        public void UpdateChunk(){
+            ClearData();
+            GetVertices();
+            generateMesh();
+            world.PrintMessage($"Updated!{chunkPosition}");
+        }
 
         public void AddVoxel(Vector3 pos){
             Vector3Int vecInt = new Vector3Int(
-                Mathf.CeilToInt(pos.x),
-                Mathf.CeilToInt(pos.y),
-                Mathf.CeilToInt(pos.z)
+                Mathf.FloorToInt(pos.x),
+                Mathf.FloorToInt(pos.y),
+                Mathf.FloorToInt(pos.z)
             );
             vecInt -= chunkPosition;
+            //world.PrintMessage(vecInt.ToString());
             terrainMap[vecInt.x, vecInt.y, vecInt.z] = 0f;
             
             ClearData();

@@ -185,6 +185,15 @@ namespace UnityTemplateProjects
                 
             }
 
+            if (Input.GetKeyDown(KeyCode.U))
+            {
+
+                Vector3 pos = cursorPosition.position;
+
+                world.GetChunkFromVector3(pos)?.UpdateChunk();
+                
+            }
+
             // Unlock and show cursor when right mouse button released
             if (Input.GetMouseButtonUp(1))
             {
